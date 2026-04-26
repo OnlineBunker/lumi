@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Google Fonts already loaded in index.html ─── */
+
+:root {
+  --void:     #04040d;
+  --surface:  #0b0b1a;
+  --border:   rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --glass:    rgba(255, 255, 255, 0.05);
+  --glass-hover: rgba(255, 255, 255, 0.08);
+
+  /* Accent gradient — indigo → cyan */
+  --accent-from: #6366f1;
+  --accent-to:   #06b6d4;
+  --accent-mid:  #8b5cf6;
+
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--void);
+  color: var(--text-primary);
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Custom scrollbar ─── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ─── Gradient text utility ─── */
+.gradient-text {
+  background: linear-gradient(135deg, #a5b4fc, #67e8f9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Glass panel utility ─── */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ─── Gradient border button ─── */
+.btn-primary {
+  position: relative;
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+  border: none;
+  color: white;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.btn-primary:hover  { opacity: 0.9; transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+
+/* ─── Streaming cursor blink ─── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor-blink::after {
+  content: '▋';
+  font-size: 0.9em;
+  animation: blink 1s step-end infinite;
+  color: #6366f1;
+  margin-left: 1px;
+}
+
+/* ─── Animated mesh background ─── */
+@keyframes meshMove {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  33%  { transform: translate(30px, -20px) rotate(120deg); }
+  66%  { transform: translate(-20px, 30px) rotate(240deg); }
+  100% { transform: translate(0, 0) rotate(360deg); }
+}
+.mesh-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  animation: meshMove 20s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ─── react-pdf page wrapper ─── */
+.react-pdf__Page {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-pdf__Page__canvas {
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto;
+}
