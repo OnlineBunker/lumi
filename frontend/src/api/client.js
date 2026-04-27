@@ -1,8 +1,10 @@
 import axios from 'axios'
 
+const BASE_URL = import.meta.env.VITE_API_URL || '';
+
 // Axios for regular requests (upload, delete)
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${BASE_URL}/api`,
   timeout: 60_000,
 })
 
@@ -20,7 +22,7 @@ export const api = axios.create({
  */
 export async function streamChat({ payload, onToken, onSources, onDone, onError }) {
   try {
-    const response = await fetch('/api/chat', {
+    const response = await fetch(`${BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
