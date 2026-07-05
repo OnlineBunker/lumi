@@ -14,7 +14,13 @@ app = FastAPI(
 # Allow the React dev server to call this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "https://lumi-wine-gamma.vercel.app"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        # No trailing slash — browsers send Origin without one, and
+        # CORSMiddleware matches exact strings.
+        "https://lumi-wine-gamma.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

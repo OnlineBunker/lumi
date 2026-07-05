@@ -1,10 +1,15 @@
 import axios from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_URL || '';
+// In dev, Vite proxies `/api` → http://localhost:8000 (see vite.config.js).
+// In prod (Vercel), set VITE_API_URL to the Render backend, e.g.
+//   https://lumi-qoe2.onrender.com
+// Empty string means "same origin" (dev with the Vite proxy).
+const BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const API_BASE = `${BASE_URL}/api`
 
 // Axios for regular requests (upload, delete)
 export const api = axios.create({
-  baseURL: `${BASE_URL}/api`,
+  baseURL: API_BASE,
   timeout: 60_000,
 })
 
@@ -22,15 +27,24 @@ export const api = axios.create({
  */
 export async function streamChat({ payload, onToken, onSources, onDone, onError }) {
   try {
-    const response = await fetch(`${BASE_URL}/api/chat`, {
+    const response = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      throw new Error(err.detail || 'Request failed')
+      // Backend returns {"detail": "..."} on FastAPI HTTPExceptions; on a
+      // Vercel 404 the body is HTML — fall back to status text so the
+      // user sees something useful ("404 Not Found" vs the generic
+      // "Request failed" they were getting before).
+      const ct = response.headers.get('content-type') || ''
+      let detail = response.statusText || 'Request failed'
+      if (ct.includes('application/json')) {
+        const err = await response.json().catch(() => ({}))
+        if (err?.detail) detail = err.detail
+      }
+      throw new Error(`${response.status} ${detail}`)
     }
 
     const reader  = response.body.getReader()
