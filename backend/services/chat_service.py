@@ -46,12 +46,17 @@ async def stream_answer(
     user = build_user_prompt(question, chunks, chat_history or [])
 
     # Step 4 — Stream tokens from LLM
-    async for token in llm.astream([
-        SystemMessage(content=system),
-        HumanMessage(content=user),
-    ]):
-        if token.content:
-            yield f"data: {json.dumps({'type': 'token', 'content': token.content})}\n\n"
+    try:
+        async for token in llm.astream([
+            SystemMessage(content=system),
+            HumanMessage(content=user),
+        ]):
+            if token.content:
+                yield f"data: {json.dumps({'type': 'token', 'content': token.content})}\n\n"
+    except Exception as e:
+        # Surface LLM errors to the client instead of letting the stream
+        # die silently — a silent close left the UI cursor blinking forever.
+        yield f"data: {json.dumps({'type': 'error', 'content': f'LLM error: {e}'})}\n\n"
 
-    # Step 5 — Signal frontend that stream is complete
+    # Step 5 — Signal frontend that stream is complete (always, even on error)
     yield f"data: {json.dumps({'type': 'done'})}\n\n"

@@ -51,6 +51,7 @@ export async function streamChat({ payload, onToken, onSources, onDone, onError 
     const decoder = new TextDecoder()
     let buffer    = ''
 
+    let gotDone = false
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -66,11 +67,16 @@ export async function streamChat({ payload, onToken, onSources, onDone, onError 
           const data = JSON.parse(line.slice(6))
           if      (data.type === 'token')   onToken(data.content)
           else if (data.type === 'sources') onSources(data.content)
-          else if (data.type === 'done')    onDone()
+          else if (data.type === 'done')    { onDone(); gotDone = true }
           else if (data.type === 'error')   onError(data.content)
         } catch { /* malformed line — skip */ }
       }
     }
+
+    // If the server closed the stream without sending a 'done' event
+    // (e.g. backend crash, LLM error before our try/except landed), the UI
+    // would otherwise sit with a blinking cursor forever.
+    if (!gotDone) onError('Stream ended unexpectedly.')
   } catch (err) {
     onError(err.message || 'Network error')
   }
