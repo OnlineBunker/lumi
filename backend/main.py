@@ -1,27 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 from routers import upload, chat
-from config import settings
 
-app = FastAPI(
-    title="PDF Chat API",
-    description="RAG-powered PDF chat with streaming responses",
-    version="1.0.0",
-    docs_url="/docs",   # Swagger UI — test your API at localhost:8000/docs
-)
+app = FastAPI(title="PDF Chat API")
 
-# Allow the React dev server to call this API
+# Production plus Vercel preview deployments (lumi-git-*.vercel.app etc.)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        # No trailing slash — browsers send Origin without one, and
-        # CORSMiddleware matches exact strings.
-        "https://lumi-wine-gamma.vercel.app",
-    ],
-    allow_credentials=True,
+    allow_origin_regex=r"https://lumi[a-z0-9-]*\.vercel\.app|http://localhost:\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -32,11 +18,4 @@ app.include_router(chat.router)
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "PDF Chat API is running 🚀"}
-
-
-@app.on_event("startup")
-async def startup():
-    """Create required directories on first run."""
-    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-    Path(settings.vector_store_dir).mkdir(parents=True, exist_ok=True)
+    return {"status": "ok"}

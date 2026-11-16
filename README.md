@@ -39,7 +39,7 @@ pdf-chat-app/
 │   │   └── upload.py           # PDF upload endpoint
 │   ├── services/
 │   │   ├── chat_service.py     # LLM streaming logic
-│   │   ├── pdf_service.py      # PDF parsing and storage
+│   │   ├── pdf_service.py      # PDF text extraction
 │   │   └── rag_service.py      # ChromaDB store and retrieval
 │   ├── utils/
 │   │   ├── chunker.py          # Text splitting
@@ -90,7 +90,6 @@ Create a `.env` file inside `backend/`:
 GEMINI_API_KEY=your-gemini-api-key-here
 LLM_MODEL=gemini-2.5-flash
 EMBEDDING_MODEL=gemini-embedding-001
-UPLOAD_DIR=./uploads
 VECTOR_STORE_DIR=./vector_store
 CHUNK_SIZE=500
 CHUNK_OVERLAP=100
@@ -150,7 +149,6 @@ Frontend runs at `http://localhost:5173`
 | `GEMINI_API_KEY` | Google Gemini API key | required |
 | `LLM_MODEL` | Gemini model for chat | `gemini-2.5-flash` |
 | `EMBEDDING_MODEL` | Gemini model for embeddings | `gemini-embedding-001` |
-| `UPLOAD_DIR` | Directory to store uploaded PDFs | `./uploads` |
 | `VECTOR_STORE_DIR` | Directory for ChromaDB | `./vector_store` |
 | `CHUNK_SIZE` | Characters per text chunk | `500` |
 | `CHUNK_OVERLAP` | Overlap between chunks | `100` |

@@ -1,60 +1,45 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from models.schemas import UploadResponse, DeleteResponse
-from services.pdf_service import save_upload, extract_text, get_page_count
+import uuid
+from fastapi import APIRouter, UploadFile, HTTPException
+from services.pdf_service import extract_text
 from services.rag_service import store_chunks, delete_document
 from utils.chunker import chunk_pages
-from config import settings
 
-router = APIRouter(prefix="/api", tags=["upload"])
+router = APIRouter(prefix="/api")
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE = 20 * 1024 * 1024
 
 
-@router.post("/upload", response_model=UploadResponse)
-async def upload_pdf(file: UploadFile = File(...)):
-    """
-    Full PDF processing pipeline:
-    1. Validate → 2. Save → 3. Extract text → 4. Chunk → 5. Embed & store
-    """
+# Plain `def` so FastAPI runs it in a thread; the embedding calls would
+# otherwise block every other request while a PDF is processed.
+@router.post("/upload")
+def upload_pdf(file: UploadFile):
     if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File must be under 20 MB.")
+        raise HTTPException(400, "Only PDF files are supported.")
+    if file.size > MAX_FILE_SIZE:
+        raise HTTPException(400, "File must be under 20 MB.")
 
     try:
-        doc_id, file_path = save_upload(content, file.filename)
+        pages, page_count = extract_text(file.file.read())
+    except Exception:
+        raise HTTPException(400, "Could not read this PDF.")
+    if not pages:
+        raise HTTPException(400, "No text could be extracted. This might be a scanned PDF.")
 
-        pages = extract_text(file_path)
-        if not pages:
-            raise HTTPException(
-                status_code=400,
-                detail="No text could be extracted. This might be a scanned PDF.",
-            )
-
-        chunks = chunk_pages(pages, settings.chunk_size, settings.chunk_overlap)
-        chunk_count = store_chunks(doc_id, chunks)
-
-        return UploadResponse(
-            doc_id=doc_id,
-            filename=file.filename,
-            page_count=get_page_count(file_path),
-            chunk_count=chunk_count,
-            message="PDF processed and ready to chat.",
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-
-
-@router.delete("/document/{doc_id}", response_model=DeleteResponse)
-async def delete_doc(doc_id: str):
-    """Delete all stored embeddings for a document."""
+    doc_id = uuid.uuid4().hex[:8]
     try:
-        delete_document(doc_id)
-        return DeleteResponse(message=f"Document {doc_id} removed.")
+        chunk_count = store_chunks(doc_id, chunk_pages(pages))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, f"Processing failed: {e}")
+
+    return {
+        "doc_id": doc_id,
+        "filename": file.filename,
+        "page_count": page_count,
+        "chunk_count": chunk_count,
+    }
+
+
+@router.delete("/document/{doc_id}")
+def delete_doc(doc_id: str):
+    delete_document(doc_id)
+    return {"message": f"Document {doc_id} removed."}

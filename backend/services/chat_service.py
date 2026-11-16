@@ -1,62 +1,34 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from config import settings
-from utils.prompt_builder import build_system_prompt, build_user_prompt
-from services.rag_service import query_chunks
-from typing import AsyncGenerator, List
+import asyncio
 import json
-
-# Single LLM instance — streaming=True enables token-by-token generation
-llm = ChatGoogleGenerativeAI(
-    model=settings.llm_model,
-    google_api_key=settings.gemini_api_key,
-    streaming=True,
-    temperature=0.3,  # lower = more factual, less creative hallucination
-)
+from google.genai import types
+from config import settings
+from services.rag_service import query_chunks
+from utils.embedder import client
+from utils.prompt_builder import build_system_prompt, build_user_prompt
 
 
-async def stream_answer(
-    doc_id: str,
-    question: str,
-    mode: str = "default",
-    chat_history: List[dict] = None,
-) -> AsyncGenerator[str, None]:
-    """
-    Full RAG pipeline as a streaming SSE generator.
+def event(type, content=None):
+    return f"data: {json.dumps({'type': type, 'content': content})}\n\n"
 
-    Flow:
-    1. Retrieve relevant chunks from Chroma
-    2. Send source metadata first (so UI can show citations immediately)
-    3. Stream LLM tokens as they arrive
-    4. Send 'done' event to signal completion
-    """
 
-    # Step 1 — Retrieve
-    chunks = query_chunks(doc_id, question)
-    if not chunks:
-        yield f"data: {json.dumps({'type': 'error', 'content': 'No relevant content found in this document.'})}\n\n"
-        return
+async def stream_answer(doc_id, question, mode, chat_history):
+    chunks = await asyncio.to_thread(query_chunks, doc_id, question)
+    # Full chunk text: the frontend highlights it in the PDF
+    yield event("sources", [{"page": c["page"], "text": c["text"]} for c in chunks])
 
-    # Step 2 — Send sources immediately (UI shows page chips before answer)
-    sources = [{"page": c["page"], "text": c["text"][:120] + "…"} for c in chunks]
-    yield f"data: {json.dumps({'type': 'sources', 'content': sources})}\n\n"
-
-    # Step 3 — Build prompts
-    system = build_system_prompt(mode)
-    user = build_user_prompt(question, chunks, chat_history or [])
-
-    # Step 4 — Stream tokens from LLM
     try:
-        async for token in llm.astream([
-            SystemMessage(content=system),
-            HumanMessage(content=user),
-        ]):
-            if token.content:
-                yield f"data: {json.dumps({'type': 'token', 'content': token.content})}\n\n"
+        stream = await client.aio.models.generate_content_stream(
+            model=settings.llm_model,
+            contents=build_user_prompt(question, chunks, chat_history),
+            config=types.GenerateContentConfig(
+                system_instruction=build_system_prompt(mode),
+                temperature=0.3,
+            ),
+        )
+        async for part in stream:
+            if part.text:
+                yield event("token", part.text)
     except Exception as e:
-        # Surface LLM errors to the client instead of letting the stream
-        # die silently — a silent close left the UI cursor blinking forever.
-        yield f"data: {json.dumps({'type': 'error', 'content': f'LLM error: {e}'})}\n\n"
+        yield event("error", f"LLM error: {e}")
 
-    # Step 5 — Signal frontend that stream is complete (always, even on error)
-    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+    yield event("done")
