@@ -1,192 +1,160 @@
-import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Upload, FileText, Zap, Shield, Sparkles } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { api } from '../api/client.js'
+import { useState } from 'react'
+import { FileUp, AlertCircle } from 'lucide-react'
+import { uploadPdf } from '../api/client.js'
 import useChatStore from '../store/chatStore.js'
+import { useCycle, READING } from '../hooks/useCycle.js'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
-const features = [
-  { icon: Zap,      label: 'Streaming answers' },
-  { icon: Sparkles, label: 'ELI5, Pro, Student modes' },
-  { icon: Shield,   label: 'Page citations' },
-  { icon: FileText, label: 'Any PDF up to 20 MB' },
-]
+const MAX_MB = 20
 
 export default function HomePage() {
-  const [isDragging, setIsDragging] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-  const [progress, setProgress] = useState('')
-  const navigate = useNavigate()
-  const { setDocument } = useChatStore()
+  const [dragging, setDragging] = useState(false)
+  const [upload, setUpload] = useState(null) // { name, progress 0-1 }
+  const [error, setError] = useState(null)
+  const setDocument = useChatStore((s) => s.setDocument)
 
-  const processFile = useCallback(async (file) => {
-    if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
-      toast.error('Please upload a PDF file.')
-      return
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('File must be under 20 MB.')
-      return
-    }
+  const processFile = async (file) => {
+    if (!file || upload) return
+    setError(null)
+    if (!file.name.toLowerCase().endsWith('.pdf')) return setError(`“${file.name}” isn’t a PDF. Choose a .pdf file.`)
+    if (file.size > MAX_MB * 1024 * 1024) return setError(`That file is over ${MAX_MB} MB. Try a smaller PDF.`)
 
-    setIsUploading(true)
-    setProgress('Extracting text…')
-
+    setUpload({ name: file.name, progress: 0 })
     try {
-      const form = new FormData()
-      form.append('file', file)
-
-      setProgress('Embedding chunks…')
-      const { data } = await api.post('/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (e) => {
-          const pct = Math.round((e.loaded / e.total) * 100)
-          setProgress(`Uploading… ${pct}%`)
-        },
-      })
-
+      const data = await uploadPdf(file, (e) => setUpload({ name: file.name, progress: e.progress ?? 1 }))
       setDocument({ ...data, fileObject: file })
-      toast.success(`Ready! ${data.chunk_count} chunks indexed.`)
-      navigate('/workspace')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed.')
-      setIsUploading(false)
-      setProgress('')
+      setError(err.response?.data?.detail || 'Upload failed. Check your connection and try again.')
+      setUpload(null)
     }
-  }, [navigate, setDocument])
+  }
 
-  const onDrop = useCallback((e) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    processFile(file)
-  }, [processFile])
-
-  const onFileInput = (e) => processFile(e.target.files[0])
+  const trySample = async () => {
+    const blob = await fetch('/sample.pdf').then((r) => r.blob())
+    processFile(new File([blob], 'sleep-primer.pdf', { type: 'application/pdf' }))
+  }
 
   return (
-    <motion.div
-      className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
-      style={{ background: 'var(--void)' }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.2 } }}
-    >
-      {/* Animated mesh background blobs */}
-      <div className="mesh-blob w-96 h-96 bg-indigo-600 top-[-100px] left-[-100px]" style={{ animationDelay: '0s' }} />
-      <div className="mesh-blob w-80 h-80 bg-violet-600 bottom-[-80px] right-[-80px]" style={{ animationDelay: '-7s' }} />
-      <div className="mesh-blob w-64 h-64 bg-cyan-600 top-[40%] right-[10%]" style={{ animationDelay: '-14s' }} />
+    <div className="min-h-full flex flex-col">
+      <header className="px-6 py-4 flex items-center justify-between">
+        <span className="text-lg font-semibold tracking-tight"><span className="highlight">Lumi</span></span>
+        <ThemeToggle />
+      </header>
 
-      {/* Subtle grid overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-        }}
-      />
-
-      <div className="relative z-10 w-full max-w-2xl px-6 flex flex-col items-center gap-10">
-        {/* Logo + Heading */}
-        <motion.div
-          className="text-center"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium mb-6 glass"
-               style={{ color: 'var(--text-secondary)', borderColor: 'rgba(99,102,241,0.3)' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse-slow" />
-            AI-powered PDF reader
-          </div>
-
-          <h1 className="font-display text-6xl font-800 tracking-tight leading-none mb-4"
-              style={{ fontWeight: 800 }}>
-            <span style={{ color: 'var(--text-primary)' }}>Chat with</span>
-            <br />
-            <span className="gradient-text">any PDF</span>
+      <main className="flex-1 w-full max-w-6xl mx-auto px-6 pt-6 pb-16 grid lg:grid-cols-[1fr_1.05fr] gap-14 lg:gap-20 items-center">
+        <div className="max-w-xl">
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.08] text-balance">
+            Ask your PDF <span className="highlight">anything</span>.
           </h1>
-          <p className="text-lg" style={{ color: 'var(--text-secondary)' }}>
-            Upload a document. Ask anything. Get cited, accurate answers.
+          <p className="mt-4 text-lg text-ink-2 leading-relaxed text-pretty">
+            Upload a document and ask in plain language. Every answer points to the page it came from,
+            and Lumi highlights the exact passage so you can check it.
           </p>
-        </motion.div>
 
-        {/* Upload Zone */}
-        <motion.div
-          className="w-full"
-          initial={{ opacity: 0, y: 32 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        >
           <label
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={onDrop}
-            className="block cursor-pointer rounded-2xl transition-all duration-300"
-            style={{
-              background: isDragging ? 'rgba(99,102,241,0.12)' : 'var(--glass)',
-              border: `2px dashed ${isDragging ? '#6366f1' : 'rgba(255,255,255,0.12)'}`,
-              padding: '48px 32px',
-            }}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); processFile(e.dataTransfer.files[0]) }}
+            className={`mt-10 block rounded-2xl border-2 border-dashed p-6 sm:p-7 transition-colors focus-within:border-[rgb(var(--focus))] ${
+              upload ? 'border-line bg-surface' : dragging ? 'border-ink bg-fill' : 'border-line bg-surface hover:border-ink-3 cursor-pointer'
+            }`}
           >
-            {isUploading ? (
-              <div className="flex flex-col items-center gap-4">
-                {/* Spinning loader */}
-                <div className="w-14 h-14 rounded-full border-2 border-transparent"
-                     style={{
-                       borderTopColor: '#6366f1',
-                       borderRightColor: '#06b6d4',
-                       animation: 'spin 0.8s linear infinite',
-                     }} />
-                <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>{progress}</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-300"
-                     style={{ background: 'rgba(99,102,241,0.15)', transform: isDragging ? 'scale(1.1)' : 'scale(1)' }}>
-                  <Upload size={24} color="#6366f1" />
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              className="sr-only"
+              disabled={!!upload}
+              // Reset so picking the same file again (after an error) still fires
+              onChange={(e) => { processFile(e.target.files[0]); e.target.value = '' }}
+            />
+            {upload ? <Progress {...upload} /> : (
+              <div className="flex items-center gap-5 pointer-events-none">
+                <div className="shrink-0 grid place-items-center w-12 h-12 rounded-xl bg-fill text-ink-2">
+                  <FileUp size={22} strokeWidth={1.75} aria-hidden />
                 </div>
-                <div className="text-center">
-                  <p className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                    Drop your PDF here
-                  </p>
-                  <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                    or <span style={{ color: '#6366f1' }}>browse files</span> · up to 20 MB
-                  </p>
+                <div>
+                  <p className="font-medium">{dragging ? 'Drop to upload' : 'Choose a PDF or drop it here'}</p>
+                  <p className="mt-0.5 text-sm text-ink-3">Text-based PDFs up to {MAX_MB} MB</p>
                 </div>
               </div>
             )}
-            <input
-              type="file"
-              accept=".pdf"
-              className="hidden"
-              onChange={onFileInput}
-              disabled={isUploading}
-            />
           </label>
-        </motion.div>
 
-        {/* Feature chips */}
-        <motion.div
-          className="flex flex-wrap justify-center gap-3"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.4, delay: 0.3 }}
-        >
-          {features.map(({ icon: Icon, label }) => (
-            <div key={label}
-                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm glass"
-                 style={{ color: 'var(--text-secondary)' }}>
-              <Icon size={13} style={{ color: '#6366f1' }} />
-              {label}
-            </div>
-          ))}
-        </motion.div>
+          {error && (
+            <p role="alert" className="mt-3 flex items-start gap-2 text-sm text-ink-2">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden /> {error}
+            </p>
+          )}
+
+          {!upload && (
+            <p className="mt-5 text-sm text-ink-2">
+              No PDF handy?{' '}
+              <button onClick={trySample} className="font-medium text-ink underline decoration-mark decoration-[3px] underline-offset-4 hover:decoration-ink">
+                Try a sample about sleep
+              </button>
+            </p>
+          )}
+        </div>
+
+        <Preview />
+      </main>
+
+      <footer className="px-6 py-5 text-sm text-ink-3 text-center">
+        Answers are written by Google Gemini and can be wrong. Check the cited page.
+      </footer>
+    </div>
+  )
+}
+
+function Progress({ name, progress }) {
+  const word = useCycle(READING)
+  const uploading = progress < 1
+  return (
+    <div>
+      <p className="font-medium truncate">{name}</p>
+      <div
+        role="progressbar"
+        aria-label={uploading ? 'Uploading' : 'Reading the document'}
+        aria-valuenow={uploading ? Math.round(progress * 100) : undefined}
+        className="mt-3 h-1.5 rounded-full bg-fill overflow-hidden"
+      >
+        <div
+          className={`h-full rounded-full bg-ink transition-[width] duration-300 ${uploading ? '' : 'animate-pulse'}`}
+          style={{ width: `${Math.max(progress, 0.04) * 100}%` }}
+        />
       </div>
+      <p className="mt-2.5 text-sm">
+        {uploading ? <span className="text-ink-2">Uploading {Math.round(progress * 100)}%</span> : <span className="shimmer">{word}…</span>}
+      </p>
+    </div>
+  )
+}
 
-      {/* Spinning keyframe inline — simpler than a class */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </motion.div>
+// A static picture of the core loop: a page with a cited passage, and the answer that cites it.
+function Preview() {
+  const line = (w, i) => <div key={i} className="h-2 rounded-full bg-zinc-200" style={{ width: `${w}%` }} />
+  return (
+    <div aria-hidden className="relative w-full max-w-[520px] h-[340px] sm:h-[400px] mx-auto select-none">
+      <div className="absolute left-0 top-0 w-[72%] h-[88%] rounded-md bg-white p-[7%] shadow-[0_1px_3px_rgb(0_0_0/0.1),0_16px_40px_rgb(0_0_0/0.10)]">
+        <div className="h-1.5 w-1/3 rounded-full bg-zinc-200" />
+        <div className="mt-5 h-3.5 w-3/5 rounded-full bg-zinc-300" />
+        <div className="mt-5 space-y-2.5">{[100, 94, 97, 58].map(line)}</div>
+        <div className="mt-5 space-y-2.5">
+          {[96, 100, 71].map((w, i) => (
+            <div key={i} className="mark-line h-2 rounded-full bg-zinc-200" style={{ width: `${w}%`, animationDelay: `${500 + i * 180}ms` }} />
+          ))}
+        </div>
+        <div className="mt-5 space-y-2.5">{[100, 89, 64].map(line)}</div>
+      </div>
+      <div className="absolute right-0 bottom-0 w-[62%] rounded-2xl border border-line bg-surface p-4 shadow-[0_16px_40px_rgb(0_0_0/0.14)]">
+        <p className="ml-auto w-fit px-3 py-1.5 rounded-xl rounded-br-sm bg-fill text-[13px]">Why do I crash after coffee?</p>
+        <p className="mt-3 text-[13px] leading-5">
+          Caffeine only hides sleep pressure. When it wears off, all of it hits at once.
+        </p>
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-ink-3">
+          From <span className="px-2 py-0.5 rounded-md bg-mark text-[#1a1a1e] font-medium">p. 1</span>
+        </div>
+      </div>
+    </div>
   )
 }

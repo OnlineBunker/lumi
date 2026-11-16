@@ -1,86 +1,106 @@
-import { motion } from 'framer-motion'
-import { BookOpen } from 'lucide-react'
+import { useState } from 'react'
+import { AlertCircle, Check, Copy, X } from 'lucide-react'
 import useChatStore from '../store/chatStore.js'
+import { splitSources, parseBlocks, inlineRuns } from '../answer.js'
+import { useCycle, THINKING } from '../hooks/useCycle.js'
 
-export default function MessageBubble({ message }) {
-  const { setCurrentPage } = useChatStore()
-  const { role, content, sources, isStreaming } = message
-  const isUser = role === 'user'
+const Inline = ({ text }) => inlineRuns(text).map((r, i) =>
+  r.bold ? <strong key={i} className="font-semibold">{r.text}</strong>
+    : r.code ? <code key={i} className="px-1 py-0.5 rounded bg-fill text-[0.9em]">{r.text}</code>
+      : r.text)
+
+function Answer({ text }) {
+  return parseBlocks(text).map((b, i) => {
+    if (b.type === 'heading') return <h3 key={i} className="font-semibold mt-1">{b.text}</h3>
+    if (b.type === 'list') {
+      const List = b.ordered ? 'ol' : 'ul'
+      return (
+        <List key={i} className={`pl-5 space-y-1.5 ${b.ordered ? 'list-decimal' : 'list-disc'} marker:text-ink-3`}>
+          {b.items.map((t, j) => <li key={j} className="pl-1"><Inline text={t} /></li>)}
+        </List>
+      )
+    }
+    return <p key={i} className="whitespace-pre-line"><Inline text={b.text} /></p>
+  })
+}
+
+function Thinking() {
+  const word = useCycle(THINKING)
+  return <p className="shimmer w-fit">{word}…</p>
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => navigator.clipboard.writeText(text).then(() => {
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  })
+  return (
+    <button onClick={copy} aria-label={copied ? 'Copied' : 'Copy answer'} className="ml-auto grid place-items-center w-8 h-8 rounded-lg text-ink-3 hover:text-ink hover:bg-fill transition-colors">
+      {copied ? <Check size={15} aria-hidden /> : <Copy size={15} aria-hidden />}
+    </button>
+  )
+}
+
+export default function MessageBubble({ message, onRetry }) {
+  const cite = useChatStore((s) => s.cite)
+  const highlight = useChatStore((s) => s.highlight)
+  const { role, content, sources = [], isStreaming, error } = message
+
+  if (role === 'user') {
+    return (
+      <div className="self-end max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-md bg-fill text-[15px] leading-6 whitespace-pre-wrap break-words">
+        {content}
+      </div>
+    )
+  }
+
+  const { body, pages } = splitSources(content)
+  // Prefer the pages the model says it used; fall back to everything that was retrieved
+  const cited = [...new Set(pages ?? sources.map((s) => s.page))].sort((a, b) => a - b)
+  const textFor = (page) => sources.filter((s) => s.page === page).map((s) => s.text).join(' ')
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0  }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
-    >
-      {/* Avatar */}
-      <div
-        className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-xs font-bold mt-0.5"
-        style={{
-          background: isUser
-            ? 'linear-gradient(135deg, #6366f1, #06b6d4)'
-            : 'rgba(255,255,255,0.06)',
-          color: isUser ? 'white' : 'var(--text-muted)',
-          border: isUser ? 'none' : '1px solid var(--border)',
-        }}
-      >
-        {isUser ? 'U' : 'AI'}
+    <div className="text-[15px] leading-relaxed break-words">
+      <div className={`space-y-3 ${isStreaming ? '[&>*:last-child]:caret' : ''}`}>
+        {body ? <Answer text={body} /> : isStreaming && <Thinking />}
       </div>
 
-      {/* Bubble + Sources */}
-      <div className={`flex flex-col gap-2 max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
-        {/* Message bubble */}
-        <div
-          className="px-4 py-3 rounded-2xl text-sm leading-relaxed"
-          style={{
-            background: isUser
-              ? 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(6,182,212,0.15))'
-              : 'var(--glass)',
-            border: `1px solid ${isUser ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
-            color: 'var(--text-primary)',
-            // Round corners contextually
-            borderTopRightRadius: isUser ? '6px' : '16px',
-            borderTopLeftRadius:  isUser ? '16px' : '6px',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
-          {content || (isStreaming ? '' : '…')}
-          {/* Blinking cursor while streaming */}
-          {isStreaming && <span className="cursor-blink" />}
+      {error && (
+        <div role="alert" className="mt-2 flex items-start gap-2 text-sm text-ink-2">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <p>
+            Couldn’t get an answer. <span className="text-ink-3">{error}</span>
+            {onRetry && (
+              <button onClick={onRetry} className="ml-2 font-medium text-ink underline underline-offset-4">Try again</button>
+            )}
+          </p>
         </div>
+      )}
 
-        {/* Citation chips — only on AI messages with sources */}
-        {!isUser && sources && sources.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="flex flex-wrap gap-1.5"
-          >
-            {/* Deduplicate pages */}
-            {[...new Map(sources.map((s) => [s.page, s])).values()].map((src) => (
+      {!isStreaming && !error && body && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {cited.length > 0 && <span className="text-sm text-ink-3 mr-1">From</span>}
+          {cited.map((page) => {
+            const on = highlight?.page === page && highlight.text === textFor(page)
+            return (
               <button
-                key={src.page}
-                onClick={() => setCurrentPage(src.page)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-200"
-                style={{
-                  background: 'rgba(99,102,241,0.12)',
-                  border: '1px solid rgba(99,102,241,0.25)',
-                  color: '#a5b4fc',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99,102,241,0.22)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99,102,241,0.12)'}
-                title={src.text}
+                key={page}
+                onClick={() => cite(page, textFor(page))}
+                aria-pressed={on}
+                aria-label={on ? `Remove highlight on page ${page}` : `Show page ${page} in the document`}
+                className={`h-7 px-2.5 flex items-center gap-1 rounded-md bg-mark text-[13px] font-medium text-[#1a1a1e] hover:brightness-95 transition ${
+                  on ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface' : ''
+                }`}
               >
-                <BookOpen size={10} />
-                Page {src.page}
+                p. {page}
+                {on && <X size={12} strokeWidth={2.5} aria-hidden />}
               </button>
-            ))}
-          </motion.div>
-        )}
-      </div>
-    </motion.div>
+            )
+          })}
+          <CopyButton text={body} />
+        </div>
+      )}
+    </div>
   )
 }

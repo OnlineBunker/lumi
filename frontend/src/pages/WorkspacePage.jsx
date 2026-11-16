@@ -1,105 +1,88 @@
-import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { X, FileText, ChevronLeft } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { FileText } from 'lucide-react'
 import { api } from '../api/client.js'
 import useChatStore from '../store/chatStore.js'
 import PDFViewer from '../components/PDFViewer.jsx'
 import ChatPanel from '../components/ChatPanel.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
 export default function WorkspacePage() {
-  const navigate = useNavigate()
-  const { docId, filename, clearDocument, clearMessages } = useChatStore()
+  const { docId, filename, pageCount, messages, view, setView, clearDocument } = useChatStore()
+  const sheetOpen = view === 'doc'
+  const closeSheet = () => setView('chat')
+  const [dragY, setDragY] = useState(0)
+  const startY = useRef(0)
 
-  // Redirect to home if no document is loaded (e.g. on page refresh)
+  // The conversation lives only in this tab; warn before a refresh or Back throws it away
   useEffect(() => {
-    if (!docId) navigate('/')
-  }, [docId, navigate])
+    if (!messages.length) return
+    const warn = (e) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [messages.length])
 
-  const handleClose = async () => {
-    // Clean up embeddings from vector store
-    if (docId) {
-      try { await api.delete(`/document/${docId}`) } catch { /* ignore */ }
-    }
+  useEffect(() => {
+    if (!sheetOpen) return
+    const onKey = (e) => e.key === 'Escape' && closeSheet()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sheetOpen])
+
+  const close = () => {
+    if (messages.length && !window.confirm(`Close ${filename}? This conversation will be cleared.`)) return
+    api.delete(`/document/${docId}`).catch(() => {})
     clearDocument()
-    clearMessages()
-    navigate('/')
   }
 
-  if (!docId) return null
-
   return (
-    <motion.div
-      className="h-screen flex flex-col overflow-hidden"
-      style={{ background: 'var(--void)' }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.15 } }}
-    >
-      {/* ─── Top bar ─── */}
-      <header
-        className="flex items-center justify-between px-4 h-12 shrink-0"
-        style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}
-      >
-        <button
-          onClick={handleClose}
-          className="flex items-center gap-1.5 text-sm transition-colors duration-200"
-          style={{ color: 'var(--text-muted)' }}
-          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
-          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-        >
-          <ChevronLeft size={15} />
-          Home
-        </button>
-
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded flex items-center justify-center"
-               style={{ background: 'rgba(99,102,241,0.2)' }}>
-            <FileText size={11} color="#6366f1" />
-          </div>
-          <span className="text-sm font-medium truncate max-w-xs"
-                style={{ color: 'var(--text-secondary)' }}>
-            {filename}
-          </span>
+    <div className="h-full flex flex-col">
+      <header className="shrink-0 h-14 flex items-center gap-3 px-4 border-b border-line bg-surface">
+        <span className="hidden sm:inline font-semibold tracking-tight"><span className="highlight">Lumi</span></span>
+        <div className="min-w-0 flex-1 flex items-baseline gap-2 sm:pl-1">
+          <h1 className="truncate text-sm font-medium" title={filename}>{filename}</h1>
+          <span className="hidden sm:inline shrink-0 text-sm text-ink-3">{pageCount} {pageCount === 1 ? 'page' : 'pages'}</span>
         </div>
-
         <button
-          onClick={handleClose}
-          className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200"
-          style={{ color: 'var(--text-muted)', background: 'transparent' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
-            e.currentTarget.style.color = 'var(--text-primary)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--text-muted)'
-          }}
+          onClick={() => setView('doc')}
+          className="md:hidden shrink-0 h-9 px-3 flex items-center gap-1.5 rounded-lg bg-fill text-sm font-medium"
         >
-          <X size={14} />
+          <FileText size={15} aria-hidden /> View
+        </button>
+        <ThemeToggle />
+        <button onClick={close} className="shrink-0 h-9 px-3.5 rounded-lg text-sm font-medium border border-line hover:bg-fill transition-colors">
+          New<span className="hidden sm:inline"> PDF</span>
         </button>
       </header>
 
-      {/* ─── Main split view ─── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* PDF Viewer — 55% */}
-        <div
-          className="flex-1 overflow-hidden"
-          style={{
-            borderRight: '1px solid var(--border)',
-            minWidth: 0,
-            flexBasis: '55%',
-            maxWidth: '55%',
-          }}
+      <div className="flex-1 min-h-0 flex">
+        {/* Phones: the PDF is a sheet over the chat. Wider screens: a pane beside it. */}
+        {sheetOpen && <div onClick={closeSheet} className="md:hidden fixed inset-0 z-30 bg-black/40 animate-[fade_200ms_ease-out]" aria-hidden />}
+        <section
+          aria-label="Document"
+          className={`${sheetOpen
+            ? 'fixed inset-x-0 bottom-0 top-4 z-40 flex rounded-t-2xl overflow-hidden shadow-2xl animate-[sheet-up_300ms_cubic-bezier(0.2,0.8,0.2,1)]'
+            : 'hidden'} md:static md:z-auto md:flex md:flex-1 md:min-w-0 md:rounded-none md:shadow-none md:animate-none flex-col`}
+          style={dragY ? { transform: `translateY(${dragY}px)` } : undefined}
         >
+          <div
+            className="md:hidden shrink-0 bg-surface border-b border-line touch-none"
+            onTouchStart={(e) => { startY.current = e.touches[0].clientY }}
+            onTouchMove={(e) => setDragY(Math.max(0, e.touches[0].clientY - startY.current))}
+            onTouchEnd={() => { if (dragY > 100) closeSheet(); setDragY(0) }}
+          >
+            <div className="mx-auto mt-2 w-10 h-1.5 rounded-full bg-line" />
+            <div className="h-11 flex items-center gap-3 px-4">
+              <p className="flex-1 truncate text-sm font-medium">{filename}</p>
+              <button onClick={closeSheet} className="h-9 px-1 text-[15px] font-semibold">Done</button>
+            </div>
+          </div>
           <PDFViewer />
-        </div>
+        </section>
 
-        {/* Chat Panel — 45% */}
-        <div style={{ flexBasis: '45%', maxWidth: '45%', minWidth: 0 }} className="flex flex-col">
+        <section aria-label="Chat" className="flex-1 md:flex-none md:w-[400px] lg:w-[440px] min-w-0 flex md:border-l border-line bg-surface">
           <ChatPanel />
-        </div>
+        </section>
       </div>
-    </motion.div>
+    </div>
   )
 }

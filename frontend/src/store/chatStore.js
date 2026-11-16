@@ -1,76 +1,41 @@
 import { create } from 'zustand'
 
-const useChatStore = create((set, get) => ({
-  // ─── Document ───────────────────────────────────────────
-  docId:      null,
-  filename:   null,
-  pageCount:  0,
-  fileObject: null,   // the raw File from the upload input
-  currentPage: 1,     // synced with PDF viewer scroll
+// view: on phones the PDF opens as a sheet over the chat ('doc') or stays closed ('chat')
+const emptyDoc = { docId: null, filename: null, pageCount: 0, fileObject: null, currentPage: 1, highlight: null, view: 'chat' }
 
-  setDocument: (data) => set({
-    docId:     data.doc_id,
-    filename:  data.filename,
-    pageCount: data.page_count,
-    fileObject: data.fileObject,
-    currentPage: 1,
-  }),
+let nextId = 0
 
-  setCurrentPage: (page) => set({ currentPage: page }),
-
-  clearDocument: () => set({
-    docId: null, filename: null, pageCount: 0,
-    fileObject: null, currentPage: 1,
-  }),
-
-  // ─── Chat ────────────────────────────────────────────────
-  messages: [],   // [{ id, role, content, sources, isStreaming }]
+const useChatStore = create((set) => ({
+  ...emptyDoc,
+  messages: [], // { id, role, content, sources, isStreaming }
   mode: 'default',
 
+  setDocument: (data) => set({
+    ...emptyDoc,
+    docId: data.doc_id,
+    filename: data.filename,
+    pageCount: data.page_count,
+    fileObject: data.fileObject,
+  }),
+  clearDocument: () => set({ ...emptyDoc, messages: [] }),
+  setCurrentPage: (currentPage) => set({ currentPage }),
   setMode: (mode) => set({ mode }),
+  setView: (view) => set({ view }),
+  // Jump to a cited page and mark the passage; citing the same passage again clears it
+  cite: (page, text) => set((s) =>
+    s.highlight?.page === page && s.highlight.text === text
+      ? { highlight: null }
+      : { currentPage: page, highlight: { page, text }, view: 'doc' }),
 
-  addMessage: (msg) => set((state) => ({
-    messages: [...state.messages, { id: Date.now(), ...msg }],
+  addMessage: (msg) => set((s) => ({
+    messages: [...s.messages, { id: nextId++, ...msg }],
   })),
 
-  // Append a token to the last assistant message (for streaming)
-  appendToken: (token) => set((state) => {
-    const msgs = [...state.messages]
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === 'assistant') {
-      msgs[msgs.length - 1] = { ...last, content: last.content + token }
-    }
-    return { messages: msgs }
+  // Patch the last message (the one being streamed). `fn` gets it, returns the changed fields.
+  updateLast: (fn) => set((s) => {
+    const last = s.messages.at(-1)
+    return { messages: [...s.messages.slice(0, -1), { ...last, ...fn(last) }] }
   }),
-
-  setSources: (sources) => set((state) => {
-    const msgs = [...state.messages]
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === 'assistant') {
-      msgs[msgs.length - 1] = { ...last, sources }
-    }
-    return { messages: msgs }
-  }),
-
-  finishStreaming: () => set((state) => {
-    const msgs = [...state.messages]
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === 'assistant') {
-      msgs[msgs.length - 1] = { ...last, isStreaming: false }
-    }
-    return { messages: msgs }
-  }),
-
-  clearMessages: () => set({ messages: [] }),
-
-  // Build chat history for the API (last 6 messages for context)
-  getChatHistory: () => {
-    const { messages } = get()
-    return messages
-      .filter((m) => !m.isStreaming)
-      .slice(-6)
-      .map((m) => ({ role: m.role, content: m.content }))
-  },
 }))
 
 export default useChatStore
