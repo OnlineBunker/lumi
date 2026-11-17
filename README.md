@@ -10,9 +10,9 @@ Lumi is a full-stack RAG (Retrieval-Augmented Generation) app that lets you uplo
 |---|---|
 | Frontend | React + Vite + Tailwind CSS |
 | Backend | FastAPI (Python) |
-| LLM | Google Gemini 2.5 Flash |
+| LLM | Google Gemini Flash-Lite (latest) |
 | Embeddings | Google Gemini Embedding 001 |
-| Vector Store | ChromaDB |
+| Vector Store | NumPy (in memory + .npz on disk) |
 | PDF Parsing | PyMuPDF |
  
 ---
@@ -40,7 +40,7 @@ pdf-chat-app/
 │   ├── services/
 │   │   ├── chat_service.py     # LLM streaming logic
 │   │   ├── pdf_service.py      # PDF text extraction
-│   │   └── rag_service.py      # ChromaDB store and retrieval
+│   │   └── rag_service.py      # Vector store and retrieval
 │   ├── utils/
 │   │   ├── chunker.py          # Text splitting
 │   │   ├── embedder.py         # Gemini embedding calls
@@ -88,11 +88,11 @@ Create a `.env` file inside `backend/`:
  
 ```dotenv
 GEMINI_API_KEY=your-gemini-api-key-here
-LLM_MODEL=gemini-2.5-flash
+LLM_MODEL=gemini-flash-lite-latest
 EMBEDDING_MODEL=gemini-embedding-001
 VECTOR_STORE_DIR=./vector_store
-CHUNK_SIZE=500
-CHUNK_OVERLAP=100
+CHUNK_SIZE=1200
+CHUNK_OVERLAP=150
 TOP_K_CHUNKS=5
 ```
  
@@ -135,7 +135,7 @@ Frontend runs at `http://localhost:5173`
 4. Set **Start Command** to `uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Add environment variables in the Environment tab:
    - `GEMINI_API_KEY`
-   - `LLM_MODEL` = `gemini-2.5-flash`
+   - `LLM_MODEL` = `gemini-flash-lite-latest`
    - `EMBEDDING_MODEL` = `gemini-embedding-001`
 6. Deploy
 > Note: Render's free tier spins down after 15 minutes of inactivity. First request after inactivity takes ~30 seconds to wake up.
@@ -147,11 +147,11 @@ Frontend runs at `http://localhost:5173`
 | Variable | Description | Default |
 |---|---|---|
 | `GEMINI_API_KEY` | Google Gemini API key | required |
-| `LLM_MODEL` | Gemini model for chat | `gemini-2.5-flash` |
+| `LLM_MODEL` | Gemini model for chat | `gemini-flash-lite-latest` |
 | `EMBEDDING_MODEL` | Gemini model for embeddings | `gemini-embedding-001` |
-| `VECTOR_STORE_DIR` | Directory for ChromaDB | `./vector_store` |
-| `CHUNK_SIZE` | Characters per text chunk | `500` |
-| `CHUNK_OVERLAP` | Overlap between chunks | `100` |
+| `VECTOR_STORE_DIR` | Directory for stored document vectors | `./vector_store` |
+| `CHUNK_SIZE` | Characters per text chunk | `1200` |
+| `CHUNK_OVERLAP` | Overlap between chunks | `150` |
 | `TOP_K_CHUNKS` | Chunks retrieved per query | `5` |
  
 ---
@@ -159,10 +159,10 @@ Frontend runs at `http://localhost:5173`
 ## How It Works
  
 1. **Upload** — PDF is parsed page by page using PyMuPDF
-2. **Chunk** — Text is split into overlapping chunks using LangChain text splitter
-3. **Embed** — Each chunk is embedded using Gemini Embedding and stored in ChromaDB
+2. **Chunk** — Text is split into overlapping chunks on paragraph and sentence boundaries
+3. **Embed** — Each chunk is embedded using Gemini Embedding and stored as a NumPy array
 4. **Query** — User question is embedded and compared against stored chunks via cosine similarity
-5. **Generate** — Top matching chunks are injected into a prompt and streamed through Gemini Flash
+5. **Generate** — Top matching chunks are injected into a prompt and streamed through Gemini Flash-Lite
 6. **Stream** — Tokens arrive in real time via Server-Sent Events (SSE)
 ---
  

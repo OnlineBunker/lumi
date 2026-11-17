@@ -20,6 +20,7 @@ export default function HomePage() {
     if (file.size > MAX_MB * 1024 * 1024) return setError(`That file is over ${MAX_MB} MB. Try a smaller PDF.`)
 
     setUpload({ name: file.name, progress: 0 })
+    import('./WorkspacePage.jsx') // fetch the PDF viewer while the server reads the file
     try {
       const data = await uploadPdf(file, (e) => setUpload({ name: file.name, progress: e.progress ?? 1 }))
       setDocument({ ...data, fileObject: file })

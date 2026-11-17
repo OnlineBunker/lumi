@@ -1,5 +1,6 @@
 import uuid
 from fastapi import APIRouter, UploadFile, HTTPException
+from google.genai import errors
 from services.pdf_service import extract_text
 from services.rag_service import store_chunks, delete_document
 from utils.chunker import chunk_pages
@@ -28,6 +29,10 @@ def upload_pdf(file: UploadFile):
     doc_id = uuid.uuid4().hex[:8]
     try:
         chunk_count = store_chunks(doc_id, chunk_pages(pages))
+    except errors.APIError as e:
+        if e.code == 429:
+            raise HTTPException(429, "Gemini’s free quota is used up for now. Try again in a few minutes.")
+        raise HTTPException(502, f"Gemini error: {e.message}")
     except Exception as e:
         raise HTTPException(500, f"Processing failed: {e}")
 

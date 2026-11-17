@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FileText } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../api/client.js'
 import useChatStore from '../store/chatStore.js'
 import PDFViewer from '../components/PDFViewer.jsx'
@@ -7,7 +8,12 @@ import ChatPanel from '../components/ChatPanel.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 export default function WorkspacePage() {
-  const { docId, filename, pageCount, messages, view, setView, clearDocument } = useChatStore()
+  // Narrow subscription: streaming tokens change `messages` many times a second, and this page
+  // (plus the PDF under it) only needs to know whether a chat exists
+  const { docId, filename, pageCount, hasChat, view, setView, clearDocument } = useChatStore(useShallow((s) => ({
+    docId: s.docId, filename: s.filename, pageCount: s.pageCount, hasChat: s.messages.length > 0,
+    view: s.view, setView: s.setView, clearDocument: s.clearDocument,
+  })))
   const sheetOpen = view === 'doc'
   const closeSheet = () => setView('chat')
   const [dragY, setDragY] = useState(0)
@@ -15,11 +21,11 @@ export default function WorkspacePage() {
 
   // The conversation lives only in this tab; warn before a refresh or Back throws it away
   useEffect(() => {
-    if (!messages.length) return
+    if (!hasChat) return
     const warn = (e) => e.preventDefault()
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [messages.length])
+  }, [hasChat])
 
   useEffect(() => {
     if (!sheetOpen) return
@@ -29,7 +35,7 @@ export default function WorkspacePage() {
   }, [sheetOpen])
 
   const close = () => {
-    if (messages.length && !window.confirm(`Close ${filename}? This conversation will be cleared.`)) return
+    if (hasChat && !window.confirm(`Close ${filename}? This conversation will be cleared.`)) return
     api.delete(`/document/${docId}`).catch(() => {})
     clearDocument()
   }

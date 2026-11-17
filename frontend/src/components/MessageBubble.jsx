@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { AlertCircle, Check, Copy, X } from 'lucide-react'
 import useChatStore from '../store/chatStore.js'
 import { splitSources, parseBlocks, inlineRuns } from '../answer.js'
@@ -42,7 +42,8 @@ function CopyButton({ text }) {
   )
 }
 
-export default function MessageBubble({ message, onRetry }) {
+// memo: while an answer streams, only the last bubble changes; the rest skip re-rendering
+export default memo(function MessageBubble({ message, onRetry }) {
   const cite = useChatStore((s) => s.cite)
   const highlight = useChatStore((s) => s.highlight)
   const { role, content, sources = [], isStreaming, error } = message
@@ -103,4 +104,4 @@ export default function MessageBubble({ message, onRetry }) {
       )}
     </div>
   )
-}
+})

@@ -3,6 +3,5 @@ uvicorn[standard]==0.46.0
 python-multipart==0.0.26
 pydantic-settings==2.14.0
 pymupdf==1.27.2.3
-langchain-text-splitters==1.1.2
-chromadb==1.5.8
+numpy==2.4.4
 google-genai==1.73.1
